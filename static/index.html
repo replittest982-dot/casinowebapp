@@ -3,88 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Casino WebApp</title>
+    <title>Crash Live</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&family=Montserrat:wght@600;800&display=swap" rel="stylesheet">
 </head>
 <body>
 
-    <div class="header">
-        <div class="user-block">
-            <span class="user-icon">👤</span>
-            <span id="username">Загрузка...</span>
-        </div>
-        <div class="balance-block">
-            <span id="balance">0.00</span> $
-        </div>
-    </div>
+    <div class="app-container">
+        <header class="top-bar">
+            <div class="logo">ELITE<span class="green">CRASH</span></div>
+            <div class="balance-pill">
+                <span class="currency">$</span>
+                <span id="balance">1000.00</span>
+            </div>
+        </header>
 
-    <div id="screen-menu" class="screen active">
-        <div class="promo-banner">
-            <h2>🔥 10,000$ BONUS</h2>
-            <p>Играй и выигрывай прямо сейчас</p>
-        </div>
+        <div class="history-strip" id="history-container">
+            </div>
 
-        <h3 class="section-title">ИГРЫ</h3>
-        <div class="games-grid">
-            <div class="game-card crash-card" onclick="openGame('crash')">
-                <div class="card-icon">🚀</div>
-                <div class="card-title">CRASH</div>
-            </div>
-            <div class="game-card mines-card" onclick="openGame('mines')">
-                <div class="card-icon">💣</div>
-                <div class="card-title">MINES</div>
-            </div>
-            <div class="game-card locked">
-                <div class="card-icon">🎲</div>
-                <div class="card-title">DICE (Скоро)</div>
-            </div>
-            <div class="game-card locked">
-                <div class="card-icon">🎰</div>
-                <div class="card-title">SLOTS (Скоро)</div>
-            </div>
-        </div>
-    </div>
-
-    <div id="screen-crash" class="screen">
-        <div class="top-bar">
-            <button class="btn-back" onclick="goHome()">🔙 Назад</button>
-            <span>CRASH</span>
-        </div>
-        
-        <div class="game-area">
-            <div class="crash-display">
-                <div id="crashMultiplier" class="crash-text">1.00x</div>
-                <canvas id="crashCanvas"></canvas>
+        <div class="game-stage">
+            <canvas id="crashCanvas"></canvas>
+            
+            <div class="game-info">
+                <div id="status-text" class="status-text">ОЖИДАНИЕ</div>
+                <div id="big-multiplier" class="big-digits">1.00x</div>
             </div>
         </div>
 
-        <div class="controls">
-            <div class="input-group">
-                <label>Ставка ($)</label>
-                <input type="number" id="crashBet" value="100">
-            </div>
-            <button id="crashBtn" class="btn-primary" onclick="crashAction()">СТАВКА</button>
-        </div>
-    </div>
-
-    <div id="screen-mines" class="screen">
-        <div class="top-bar">
-            <button class="btn-back" onclick="goHome()">🔙 Назад</button>
-            <span>MINES</span>
-        </div>
-
-        <div class="game-area">
-            <div class="mines-grid" id="minesBoard">
+        <div class="controls-panel">
+            <div class="bet-input-group">
+                <button class="btn-mini" onclick="adjustBet(0.5)">1/2</button>
+                <button class="btn-mini" onclick="adjustBet(2)">x2</button>
+                <div class="input-wrapper">
+                    <span class="input-icon">$</span>
+                    <input type="number" id="betInput" value="10">
                 </div>
+            </div>
+            
+            <button id="actionBtn" class="btn-main" onclick="handleAction()">
+                <span class="btn-title">СТАВКА</span>
+                <span class="btn-subtitle">СЛЕД. РАУНД</span>
+            </button>
         </div>
 
-        <div class="controls">
-            <div class="input-group">
-                <label>Ставка ($)</label>
-                <input type="number" id="minesBet" value="100">
+        <div class="live-feed">
+            <div class="feed-header">
+                <span>ИГРОК</span>
+                <span>СТАВКА</span>
+                <span>КЭФ</span>
+                <span>ВЫИГРЫШ</span>
             </div>
-            <button id="minesBtn" class="btn-primary" onclick="startMines()">СТАВКА</button>
+            <div class="feed-list" id="feed-list">
+                </div>
         </div>
     </div>
 
