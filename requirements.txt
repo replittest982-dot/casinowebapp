@@ -1,10 +1,8 @@
 fastapi
 uvicorn
-aiogram>=3.4.0
+aiogram
 sqlalchemy
 aiosqlite
 pydantic-settings
 python-dotenv
-jinja2
-python-multipart
 websockets
