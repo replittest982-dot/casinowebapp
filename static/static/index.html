@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Casino</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div class="header">
+        <div class="user-info">👤 <span id="username">Player</span></div>
+        <div class="balance-box"><span id="balance">0.00</span> $</div>
+    </div>
+
+    <div id="screen-menu" class="container active">
+        <h2>🔥 POPULAR GAMES</h2>
+        <div class="games-grid">
+            <div class="game-card" onclick="openGame('crash')">
+                <h1>🚀</h1>
+                <h3>CRASH</h3>
+            </div>
+            <div class="game-card" onclick="openGame('mines')">
+                <h1>💣</h1>
+                <h3>MINES</h3>
+            </div>
+            <div class="game-card" onclick="alert('Скоро!')">
+                <h1>🏀</h1>
+                <h3>BASKET</h3>
+            </div>
+            <div class="game-card" onclick="alert('Скоро!')">
+                <h1>🎲</h1>
+                <h3>DICE</h3>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-crash" class="container game-screen">
+        <button class="btn-back" onclick="goHome()">🔙 Назад</button>
+        <h2>🚀 CRASH</h2>
+        <canvas id="crashCanvas" width="300" height="200"></canvas>
+        <h1 id="crashMultiplier" style="font-size: 40px; color: var(--accent);">1.00x</h1>
+        
+        <div class="bet-controls">
+            <input type="number" id="crashBet" class="bet-input" value="10">
+            <button id="crashBtn" class="btn-action" onclick="crashAction()">СТАВКА</button>
+        </div>
+    </div>
+
+    <div id="screen-mines" class="container game-screen">
+        <button class="btn-back" onclick="goHome()">🔙 Назад</button>
+        <h2>💣 MINES</h2>
+        <div class="mines-grid" id="minesBoard">
+            </div>
+        <div class="bet-controls">
+            <input type="number" id="minesBet" class="bet-input" value="10">
+            <button id="minesBtn" class="btn-action" onclick="startMines()">СТАВКА</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
