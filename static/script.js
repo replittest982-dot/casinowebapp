@@ -1,249 +1,290 @@
 const tg = window.Telegram.WebApp;
-tg.expand(); // Разворачиваем на весь экран
+tg.expand();
 
-// Переменные состояния
-let userBalance = 0;
-let isPlaying = false;
+// === ПЕРЕМЕННЫЕ ===
+let balance = 1000.00;
+let currentBet = 0;
+let isBetting = false;     // Поставили ли мы на следующий раунд
+let inGame = false;        // В игре ли мы прямо сейчас
+let ws = null;
 
-// === СВЯЗЬ С СЕРВЕРОМ ===
-async function api(method, data = {}) {
-    // Автоматически добавляем данные Телеграм для проверки на сервере
-    const payload = { initData: tg.initData, ...data };
-    try {
-        const res = await fetch(method, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        return await res.json();
-    } catch (e) {
-        tg.showAlert("Ошибка соединения с сервером!");
-        return null;
-    }
+// Элементы UI
+const els = {
+    balance: document.getElementById('balance'),
+    status: document.getElementById('status-text'),
+    bigMult: document.getElementById('big-multiplier'),
+    btn: document.getElementById('actionBtn'),
+    input: document.getElementById('betInput'),
+    history: document.getElementById('history-container'),
+    canvas: document.getElementById('crashCanvas'),
+    feed: document.getElementById('feed-list')
+};
+
+// Canvas
+const ctx = els.canvas.getContext('2d');
+let animFrame;
+
+// === WEBSOCKET ===
+// Автоматически определяем протокол (ws или wss)
+const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsUrl = `${protocol}://${window.location.host}/ws`;
+
+function connect() {
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWsMessage(data);
+    };
+
+    ws.onclose = () => {
+        setTimeout(connect, 1000); // Реконнект
+    };
 }
+connect();
 
-// === СТАРТ ПРИЛОЖЕНИЯ ===
-async function init() {
-    // 1. Логинимся
-    const data = await api('/api/login');
-    if (data && data.status === 'ok') {
-        userBalance = data.balance;
-        document.getElementById('username').innerText = data.username || 'Игрок';
-        updateBalance();
-    }
-}
-init();
-
-function updateBalance() {
-    document.getElementById('balance').innerText = userBalance.toFixed(2);
-}
-
-// === НАВИГАЦИЯ ===
-function openGame(game) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(`screen-${game}`).classList.add('active');
-    tg.BackButton.show();
-    tg.BackButton.onClick(goHome);
-}
-
-function goHome() {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById('screen-menu').classList.add('active');
-    tg.BackButton.hide();
-    isPlaying = false;
-    // Сброс интерфейсов
-    resetCrash();
-    resetMines();
-}
-
-// ===========================
-// 🚀 ЛОГИКА CRASH
-// ===========================
-let crashTimer;
-let multiplier = 1.00;
-let crashBet = 0;
-
-function crashAction() {
-    const btn = document.getElementById('crashBtn');
-    
-    if (!isPlaying) {
-        // СТАРТ ИГРЫ
-        crashBet = parseFloat(document.getElementById('crashBet').value);
-        if (crashBet > userBalance) return tg.showAlert("Недостаточно денег!");
-        if (crashBet <= 0) return tg.showAlert("Некорректная ставка!");
-
-        userBalance -= crashBet;
-        updateBalance();
+function handleWsMessage(data) {
+    if (data.type === 'tick') {
+        // ОЖИДАНИЕ
+        renderWaiting(data.time);
+        updateHistory(data.history);
+        resetGraph();
         
-        isPlaying = true;
-        multiplier = 1.00;
-        
-        btn.innerText = "ЗАБРАТЬ";
-        btn.classList.add('btn-cashout');
-        btn.style.background = "#ffcc00"; 
-        
-        document.getElementById('crashMultiplier').style.color = "white";
+        // Генерируем фейковые ставки ботов
+        if(Math.random() > 0.3) addFakeBotBet();
 
-        // Запускаем цикл роста
-        crashTimer = setInterval(() => {
-            multiplier += 0.01 + (multiplier * 0.005);
-            document.getElementById('crashMultiplier').innerText = multiplier.toFixed(2) + 'x';
-            
-            // Имитация краша (реальный результат должен приходить с сервера)
-            // Шанс краша увеличивается
-            if (Math.random() < 0.01 * multiplier) {
-                gameOverCrash(false);
-            }
-        }, 50);
+    } else if (data.type === 'fly') {
+        // ПОЛЕТ
+        renderFlying(data.multiplier);
+        drawGraph(data.multiplier);
         
-    } else {
-        // ЗАБРАТЬ ДЕНЬГИ
-        gameOverCrash(true);
-    }
-}
+        // Боты забирают выигрыш
+        checkBotsCashout(data.multiplier);
 
-async function gameOverCrash(win) {
-    clearInterval(crashTimer);
-    const btn = document.getElementById('crashBtn');
-    isPlaying = false;
-    
-    // Возвращаем кнопку
-    btn.innerText = "СТАВКА";
-    btn.classList.remove('btn-cashout');
-    btn.style.background = "";
-
-    if (win) {
-        const winAmount = crashBet * multiplier;
-        tg.showPopup({ title: 'ПОБЕДА!', message: `Вы выиграли ${winAmount.toFixed(2)}$` });
+    } else if (data.type === 'crash') {
+        // КРАШ
+        renderCrash(data.multiplier);
+        updateHistory(data.history); // Обновить историю сразу
         
-        // Отправляем на сервер
-        await api('/api/game/finish', { 
-            game: 'crash', 
-            bet: crashBet, 
-            multiplier: multiplier, 
-            win: true 
-        });
-        
-        userBalance += winAmount;
-        updateBalance();
-    } else {
-        document.getElementById('crashMultiplier').style.color = "#ff3b30";
-        document.getElementById('crashMultiplier').innerText = "CRASHED";
-        
-        // Отправляем проигрыш
-        await api('/api/game/finish', { 
-            game: 'crash', 
-            bet: crashBet, 
-            multiplier: 0, 
-            win: false 
-        });
-    }
-}
-
-function resetCrash() {
-    clearInterval(crashTimer);
-    document.getElementById('crashMultiplier').innerText = "1.00x";
-    document.getElementById('crashMultiplier').style.color = "white";
-    isPlaying = false;
-}
-
-// ===========================
-// 💣 ЛОГИКА MINES
-// ===========================
-let minesMap = [];
-let minesOpened = 0;
-let minesBetValue = 0;
-
-function startMines() {
-    if (isPlaying) return; // Нельзя начать новую, пока идет старая
-    
-    minesBetValue = parseFloat(document.getElementById('minesBet').value);
-    if (minesBetValue > userBalance) return tg.showAlert("Нет денег!");
-    
-    userBalance -= minesBetValue;
-    updateBalance();
-    isPlaying = true;
-    minesOpened = 0;
-    
-    // Блокируем кнопку
-    const btn = document.getElementById('minesBtn');
-    btn.innerText = "ИГРА ИДЕТ...";
-    btn.style.opacity = "0.5";
-    
-    // Генерируем поле (5 бомб)
-    minesMap = Array(25).fill(0);
-    for(let i=0; i<5; i++) {
-        let idx;
-        do { idx = Math.floor(Math.random() * 25); } while(minesMap[idx] === 1);
-        minesMap[idx] = 1;
-    }
-    
-    // Рисуем сетку
-    const board = document.getElementById('minesBoard');
-    board.innerHTML = '';
-    for(let i=0; i<25; i++) {
-        const cell = document.createElement('div');
-        cell.className = 'mine-cell';
-        cell.onclick = () => clickMine(i, cell);
-        board.appendChild(cell);
-    }
-}
-
-async function clickMine(index, cell) {
-    if (!isPlaying || cell.classList.contains('open')) return;
-    
-    cell.classList.add('open');
-    
-    if (minesMap[index] === 1) {
-        // БОМБА
-        cell.classList.add('bomb');
-        cell.innerHTML = '💥';
-        tg.HapticFeedback.notificationOccurred('error');
-        
-        await api('/api/game/finish', { game: 'mines', bet: minesBetValue, multiplier: 0, win: false });
-        endMines(false);
-        
-    } else {
-        // АЛМАЗ
-        cell.classList.add('gem');
-        cell.innerHTML = '💎';
-        tg.HapticFeedback.impactOccurred('medium');
-        minesOpened++;
-        
-        // Авто-выигрыш после 3 алмазов (для примера)
-        if (minesOpened >= 3) {
-            const mult = 1.5;
-            const winSum = minesBetValue * mult;
-            tg.showPopup({ title: 'ПОБЕДА!', message: `+${winSum.toFixed(2)}$` });
-            
-            await api('/api/game/finish', { game: 'mines', bet: minesBetValue, multiplier: mult, win: true });
-            
-            userBalance += winSum;
-            updateBalance();
-            endMines(true);
+        if (inGame) {
+            // Мы проиграли
+            inGame = false;
+            tg.HapticFeedback.notificationOccurred('error');
+            resetButtonState();
         }
     }
 }
 
-function endMines(win) {
-    isPlaying = false;
-    const btn = document.getElementById('minesBtn');
-    btn.innerText = "СТАВКА";
-    btn.style.opacity = "1";
+// === ЛОГИКА ИГРОКА ===
+
+window.handleAction = () => {
+    const val = parseFloat(els.input.value);
     
-    if (!win) {
-        // Показать все бомбы
-        const cells = document.querySelectorAll('.mine-cell');
-        cells.forEach((c, i) => {
-            if (minesMap[i] === 1) {
-                c.classList.add('open', 'bomb');
-                c.innerHTML = '💥';
-            }
-        });
+    // Сценарий 1: Мы ждем начала игры, ставим ставку
+    if (!inGame && !isBetting) {
+        if (val > balance) return tg.showAlert("Недостаточно средств!");
+        isBetting = true;
+        currentBet = val;
+        balance -= val;
+        updateBalance();
+        
+        // Меняем кнопку
+        els.btn.style.background = "#da3633"; // Красный (Отмена)
+        els.btn.innerHTML = `<span class="btn-title">ОТМЕНА</span><span class="btn-subtitle">${val}$</span>`;
+        
+    } 
+    // Сценарий 2: Отмена ставки (пока ждем)
+    else if (!inGame && isBetting) {
+        isBetting = false;
+        balance += currentBet;
+        updateBalance();
+        resetButtonState();
+    } 
+    // Сценарий 3: ЗАБРАТЬ ДЕНЬГИ (в полете)
+    else if (inGame) {
+        // Отправляем сигнал на сервер (в реальности), тут симулируем
+        const currentMult = parseFloat(els.bigMult.innerText);
+        const win = currentBet * currentMult;
+        balance += win;
+        updateBalance();
+        inGame = false;
+        isBetting = false;
+        
+        tg.HapticFeedback.notificationOccurred('success');
+        els.btn.classList.add('btn-disabled');
+        els.btn.innerHTML = `<span class="btn-title">ПОБЕДА</span><span class="btn-subtitle">+${win.toFixed(2)}$</span>`;
+    }
+};
+
+window.adjustBet = (factor) => {
+    let val = parseFloat(els.input.value);
+    val = val * factor;
+    if (val < 1) val = 1;
+    els.input.value = val.toFixed(0);
+};
+
+// === ОТРИСОВКА (RENDER) ===
+
+function renderWaiting(time) {
+    els.status.innerText = `СТАРТ ЧЕРЕЗ ${time.toFixed(1)}c`;
+    els.status.className = 'status-text waiting-text';
+    els.bigMult.className = 'big-digits';
+    els.bigMult.innerText = '1.00x';
+    
+    // Если мы ставили, то входим в игру
+    if (isBetting && !inGame && time <= 0.2) {
+        inGame = true;
+        // Кнопка превращается в CASHOUT
+        els.btn.className = 'btn-main btn-cashout';
+        els.btn.innerHTML = `<span class="btn-title">ЗАБРАТЬ</span><span class="btn-subtitle">ВЫИГРЫШ</span>`;
+        els.btn.style.background = ""; // Сброс красного
+    } else if (!isBetting) {
+        resetButtonState();
+    }
+    
+    // Очищаем таблицу ботов перед новой игрой
+    if (time > 4.5) els.feed.innerHTML = '';
+}
+
+function renderFlying(mult) {
+    els.status.innerText = 'В ПОЛЕТЕ';
+    els.status.className = 'status-text';
+    els.bigMult.innerText = mult.toFixed(2) + 'x';
+    
+    if (inGame) {
+        const winNow = (currentBet * mult).toFixed(2);
+        els.btn.innerHTML = `<span class="btn-title">ЗАБРАТЬ</span><span class="btn-subtitle">${winNow}$</span>`;
     }
 }
 
-function resetMines() {
-    document.getElementById('minesBoard').innerHTML = '';
-    endMines(false);
+function renderCrash(mult) {
+    els.status.innerText = 'САМОЛЕТ УЛЕТЕЛ';
+    els.bigMult.className = 'big-digits crashed-text';
+    els.bigMult.innerText = mult.toFixed(2) + 'x';
+}
+
+function resetButtonState() {
+    els.btn.className = 'btn-main';
+    els.btn.style.background = "";
+    els.btn.innerHTML = `<span class="btn-title">СТАВКА</span><span class="btn-subtitle">СЛЕД. РАУНД</span>`;
+}
+
+function updateBalance() {
+    els.balance.innerText = balance.toFixed(2);
+}
+
+function updateHistory(history) {
+    els.history.innerHTML = '';
+    history.reverse().forEach(h => {
+        const el = document.createElement('div');
+        el.className = `hist-badge ${h >= 2 ? 'hist-win' : 'hist-lose'}`;
+        el.innerText = h.toFixed(2) + 'x';
+        els.history.appendChild(el);
+    });
+}
+
+// === CANVAS GRAPH (КРАСИВЫЙ ГРАФИК) ===
+function resizeCanvas() {
+    els.canvas.width = els.canvas.offsetWidth;
+    els.canvas.height = els.canvas.offsetHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function resetGraph() {
+    ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+}
+
+function drawGraph(mult) {
+    const width = els.canvas.width;
+    const height = els.canvas.height;
+    
+    // Масштабирование: чем больше икс, тем "шире" график
+    // Простая логика для визуализации
+    const t = (mult - 1) / 5; // нормализация (до x6 будет красиво, потом уходит)
+    
+    // Кривая Безье
+    const x = Math.min(width * 0.9, width * (t * 2)); 
+    const y = Math.min(height * 0.9, height * t);
+    
+    resetGraph();
+    
+    // Линия
+    ctx.beginPath();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#58a6ff';
+    ctx.lineCap = 'round';
+    
+    // Стартовая точка (низ лево)
+    ctx.moveTo(0, height);
+    // Кривая (парабола)
+    ctx.quadraticCurveTo(x / 2, height, x, height - y);
+    ctx.stroke();
+    
+    // Градиент под графиком
+    const grad = ctx.createLinearGradient(0, height - y, 0, height);
+    grad.addColorStop(0, 'rgba(88, 166, 255, 0.4)');
+    grad.addColorStop(1, 'rgba(88, 166, 255, 0)');
+    
+    ctx.fillStyle = grad;
+    ctx.lineTo(0, height);
+    ctx.fill();
+    
+    // Точка (Самолетик)
+    ctx.beginPath();
+    ctx.fillStyle = 'white';
+    ctx.arc(x, height - y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Свечение точки
+    ctx.shadowColor = 'white';
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+// === FAKE BOTS (ФЕЙК ОНЛАЙН) ===
+const botNames = ["Alex", "CryptoKing", "Winner777", "Masha", "Ivan_Pro", "ElonMusk", "User123", "LuckyGuy"];
+let currentBots = [];
+
+function addFakeBotBet() {
+    const name = botNames[Math.floor(Math.random() * botNames.length)];
+    const bet = (Math.random() * 100 + 10).toFixed(0);
+    const id = Math.random();
+    
+    // Целевой кэшаут бота (от 1.1 до 5.0)
+    const target = 1 + Math.random() * 4;
+    
+    const botObj = { id, name, bet, target, cashed: false, el: null };
+    currentBots.push(botObj);
+    
+    // Добавляем в DOM
+    const row = document.createElement('div');
+    row.className = 'feed-row';
+    row.innerHTML = `
+        <span>${name}</span>
+        <span>${bet}$</span>
+        <span class="coef">-</span>
+        <span>-</span>
+    `;
+    els.feed.prepend(row);
+    botObj.el = row;
+    
+    // Ограничение списка (удаляем старых)
+    if (els.feed.children.length > 10) els.feed.lastChild.remove();
+}
+
+function checkBotsCashout(currentMult) {
+    currentBots.forEach(bot => {
+        if (!bot.cashed && currentMult >= bot.target) {
+            bot.cashed = true;
+            const win = (bot.bet * bot.target).toFixed(0);
+            bot.el.classList.add('is-winner');
+            bot.el.innerHTML = `
+                <span>${bot.name}</span>
+                <span>${bot.bet}$</span>
+                <span class="coef">x${bot.target.toFixed(2)}</span>
+                <span class="win-sum">+${win}$</span>
+            `;
+        }
+    });
 }
